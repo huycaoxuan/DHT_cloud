@@ -9,12 +9,14 @@
 
 #define DHT1_PIN 14
 #define DHT2_PIN 5
+#define LED 16 // the on off button feed turns this LED on/off
+//#define PWMOUT 12 // the slider feed sets the PWM output of this pin
 
 #define DHTTYPE DHT11   // DHT11, DHT21 (for DHT 21, AM2301), DHT22 (for DHT 22, AM2302, AM2321)
 DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
 DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module and do the same for 3rd and 4th etc.
 
-#define MQTT_UPDATE_INTERVAL 15000
+#define MQTT_UPDATE_INTERVAL 60000 //Thoi gian moi lan update len cloud
 float humidity1 = 0.00 ;
 float temperature1 = 0.00 ;
 float humidity2 = 0.00 ;
@@ -34,14 +36,14 @@ Adafruit_MQTT_Client mqtt(&wifiClient, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME,
 
 /****************************** Feeds ***************************************/
 
-// Setup a feed called 'temp' for publishing.
+// Setup a feed for publishing.
 Adafruit_MQTT_Publish temp = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/temp");
-// Setup a feed called 'hum' for publishing.
 Adafruit_MQTT_Publish hum = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/humidity");
-// Setup a feed called 'temp2' for publishing.
 Adafruit_MQTT_Publish temp2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/temp2");
-// Setup a feed called 'hum2' for publishing.
 Adafruit_MQTT_Publish hum2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/humidity2");
+//Sub
+Adafruit_MQTT_Subscribe onoffbutton = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/switch1");
+//Adafruit_MQTT_Subscribe slider = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/slider");
 
 void MQTT_connect();
 
@@ -63,17 +65,49 @@ void setup() {
   
   dht1.begin();//for first DHT module
   dht2.begin();//for 2nd DHT module  and do the same for 3rd and 4th etc.
+  
+  // Setup MQTT subscription for onoff & slider feed.
+  mqtt.subscribe(&onoffbutton);
+  //mqtt.subscribe(&slider);
 }
 
 void loop() {
-    if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
 
-/************chuong trinh chinh cho vao day***************/
-// Ensure the connection to the MQTT server is alive (this will make the first
+  //Sub
+  Adafruit_MQTT_Subscribe *subscription;
+  while ((subscription = mqtt.readSubscription(5000))) {
+    // Check if its the onoff button feed
+    if (subscription == &onoffbutton) {
+      Serial.print(F("On-Off button: "));
+      Serial.println((char *)onoffbutton.lastread);
+      
+      if (strcmp((char *)onoffbutton.lastread, "ON") == 0) {
+        digitalWrite(LED, LOW); 
+      }
+      if (strcmp((char *)onoffbutton.lastread, "OFF") == 0) {
+        digitalWrite(LED, HIGH); 
+      }
+    }
+    
+    /* check if its the slider feed
+    if (subscription == &slider) {
+      Serial.print(F("Slider: "));
+      Serial.println((char *)slider.lastread);
+      uint16_t sliderval = atoi((char *)slider.lastread);  // convert to a number
+      analogWrite(PWMOUT, sliderval);
+    }
+     */
+   }
+ 
+
+  
+   if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
+
+   /************chuong trinh chinh cho vao day***************/
+  // Ensure the connection to the MQTT server is alive (this will make the first
   // connection and automatically reconnect when disconnected).  See the MQTT_connect
   // function definition further below.
   MQTT_connect();
- 
   temperature1 = getTemp("c", 1); // get DHT1 temperature in C 
   humidity1 = getTemp("h", 1); // get DHT1 humidity
   temperature2 = getTemp("c", 2); // get DHT2 temperature in C 
@@ -117,16 +151,13 @@ void loop() {
     Serial.println(F("Hum2 published!"));
   }
   
-  // ping the server to keep the mqtt connection alive
-  // NOT required if you are publishing once every KEEPALIVE seconds
-  /*
-  if(! mqtt.ping()) {
-    mqtt.disconnect();
-  }
-  */
 /******************Ket thuc chuong trinh chinh********************/
 
     lastPub = millis();
+  }
+  // ping the server to keep the mqtt connection alive
+  if(! mqtt.ping()) {
+    mqtt.disconnect();
   }
   portal.handleClient();
 }
