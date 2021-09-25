@@ -9,8 +9,8 @@
 
 #define DHT1_PIN 14
 #define DHT2_PIN 5
-#define LED 16 // the on off button feed turns this LED on/off
-//#define PWMOUT 12 // the slider feed sets the PWM output of this pin
+#define LED 2 // the on off button feed turns this LED on/off
+#define PWMOUT 12 // the slider feed sets the PWM output of this pin
 
 #define DHTTYPE DHT11   // DHT11, DHT21 (for DHT 21, AM2301), DHT22 (for DHT 22, AM2302, AM2321)
 DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
@@ -43,7 +43,7 @@ Adafruit_MQTT_Publish temp2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/
 Adafruit_MQTT_Publish hum2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/humidity2");
 //Sub
 Adafruit_MQTT_Subscribe onoffbutton = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/switch1");
-//Adafruit_MQTT_Subscribe slider = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/slider");
+Adafruit_MQTT_Subscribe slider = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/slider1");
 
 void MQTT_connect();
 
@@ -67,12 +67,23 @@ void setup() {
   dht2.begin();//for 2nd DHT module  and do the same for 3rd and 4th etc.
   
   // Setup MQTT subscription for onoff & slider feed.
+  pinMode(LED, OUTPUT);     // Initialize the LED pin as an output
   mqtt.subscribe(&onoffbutton);
-  //mqtt.subscribe(&slider);
+  mqtt.subscribe(&slider);
+  //Test LED
+  Serial.println("Test LED");
+  Serial.println("LED ON");
+  digitalWrite(LED, HIGH); 
+  delay(5000);
+  Serial.println("LED OFF");
+  digitalWrite(LED, LOW); 
+  
 }
+uint32_t x=0;
 
 void loop() {
-
+  
+  MQTT_connect();
   //Sub
   Adafruit_MQTT_Subscribe *subscription;
   while ((subscription = mqtt.readSubscription(5000))) {
@@ -89,25 +100,20 @@ void loop() {
       }
     }
     
-    /* check if its the slider feed
+    //check if its the slider feed
     if (subscription == &slider) {
       Serial.print(F("Slider: "));
       Serial.println((char *)slider.lastread);
       uint16_t sliderval = atoi((char *)slider.lastread);  // convert to a number
       analogWrite(PWMOUT, sliderval);
     }
-     */
    }
- 
-
   
    if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
-
    /************chuong trinh chinh cho vao day***************/
   // Ensure the connection to the MQTT server is alive (this will make the first
   // connection and automatically reconnect when disconnected).  See the MQTT_connect
   // function definition further below.
-  MQTT_connect();
   temperature1 = getTemp("c", 1); // get DHT1 temperature in C 
   humidity1 = getTemp("h", 1); // get DHT1 humidity
   temperature2 = getTemp("c", 2); // get DHT2 temperature in C 
