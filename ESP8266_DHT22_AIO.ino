@@ -1,35 +1,54 @@
-#include <ESP8266WiFi.h>
+/**
+ * Ghi du lieu tu cam bien DHT 
+ * lib: Wifimanager, AIO, DHT
+ * Implements TRIGGEN_PIN button press, press for ondemand configportal, hold for 3 seconds for reset settings.
+ */
+#include <WiFiManager.h>
 #include <ESP8266WebServer.h>
-#include <AutoConnect.h>
 #include "DHT.h"
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 #include "secrets.h"
 
-
+#define TRIGGER_PIN 4 //Nut bam setup wifi
 #define DHT1_PIN 14
 #define DHT2_PIN 5
-#define LED 2 // the on off button feed turns this LED on/off
+#define DHT3_PIN 13
+#define MOTOR1 15 // the on off button feed turns this MOTOR1 on/off
 #define PWMOUT 12 // the slider feed sets the PWM output of this pin
-
 #define DHTTYPE DHT11   // DHT11, DHT21 (for DHT 21, AM2301), DHT22 (for DHT 22, AM2302, AM2321)
 DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
-DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module and do the same for 3rd and 4th etc.
+DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
+DHT dht3(DHT3_PIN, DHTTYPE);// for 3rd DHT module
 
 #define MQTT_UPDATE_INTERVAL 60000 //Thoi gian moi lan update len cloud
 float humidity1 = 0.00 ;
 float temperature1 = 0.00 ;
 float humidity2 = 0.00 ;
 float temperature2 = 0.00 ;
+float humidity3 = 0.00 ;
+float temperature3 = 0.00 ;
+bool wifiok = false;     //Wifi status
 
-String dataString;
-char charBuf[100];
-unsigned long previousMillis = 0; 
-const long interval = 2000; 
+//String dataString;
+//char charBuf[100];
+//const unsigned long mqtt_interval = 5000; //Thoi gian ket noi lai MQTT
+//unsigned long previousTime = 0;
+//bool retries_status = false;
 unsigned long   lastPub = 0;
 
-AutoConnect      portal;
+// wifimanager can run in a blocking mode or a non blocking mode
+// Be sure to know how to process loops with no delay() if using non blocking
+bool wm_nonblocking = false; // change to true to use non blocking
+
+WiFiManager wm; // global wm instance
+WiFiManagerParameter custom_field; // global param ( for non blocking w params )
+
+// Create an ESP8266 WiFiClient class to connect to the MQTT server.
 WiFiClient   wifiClient;
+// or... use WiFiFlientSecure for SSL
+//WiFiClientSecure client;
+
 
 // Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
 Adafruit_MQTT_Client mqtt(&wifiClient, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
@@ -41,6 +60,8 @@ Adafruit_MQTT_Publish temp = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/t
 Adafruit_MQTT_Publish hum = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/humidity");
 Adafruit_MQTT_Publish temp2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/temp2");
 Adafruit_MQTT_Publish hum2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/humidity2");
+Adafruit_MQTT_Publish temp3 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/temp3");
+Adafruit_MQTT_Publish hum3 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/humidity3");
 //Sub
 Adafruit_MQTT_Subscribe onoffbutton = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/switch1");
 Adafruit_MQTT_Subscribe slider = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/slider1");
@@ -48,41 +69,119 @@ Adafruit_MQTT_Subscribe slider = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/f
 void MQTT_connect();
 
 void setup() {
-  delay(1000);
+  WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP  
   Serial.begin(115200);
-  Serial.println();
-  Serial.print("WiFi ");
-  if (portal.begin()) {
-    Serial.println("connected:" + WiFi.SSID());
-    Serial.println("IP:" + WiFi.localIP().toString());
-  } else {
-    Serial.println("connection failed:" + String(WiFi.status()));
-    while (1) {
-      delay(100);
-      yield();
-    }
-  }
+  Serial.setDebugOutput(true);  
+  delay(3000);
+  Serial.println("\n Starting");
+  pinMode(TRIGGER_PIN, INPUT);
+  pinMode(MOTOR1, OUTPUT);     // Initialize the MOTOR1 pin as an output
   
+  // wm.resetSettings(); // wipe settings
+
+  if(wm_nonblocking) wm.setConfigPortalBlocking(false);
+
+  // add a custom input field
+  int customFieldLength = 40;
+  
+  // test custom html(radio)
+  const char* custom_radio_str = "<br/><label for='customfieldid'>Custom Field Label</label><input type='radio' name='customfieldid' value='1' checked> One<br><input type='radio' name='customfieldid' value='2'> Two<br><input type='radio' name='customfieldid' value='3'> Three";
+  new (&custom_field) WiFiManagerParameter(custom_radio_str); // custom html input
+  
+  wm.addParameter(&custom_field);
+  wm.setSaveParamsCallback(saveParamCallback);
+
+  // custom menu via array or vector
+  // 
+  // menu tokens, "wifi","wifinoscan","info","param","close","sep","erase","restart","exit" (sep is seperator) (if param is in menu, params will not show up in wifi page!)
+  // const char* menu[] = {"wifi","info","param","sep","restart","exit"}; 
+  // wm.setMenu(menu,6);
+  std::vector<const char *> menu = {"wifi","info","param","sep","restart","exit"};
+  wm.setMenu(menu);
+
+  // set dark theme
+  wm.setClass("invert");
+
+  // wm.setConnectTimeout(20); // how long to try to connect for before continuing
+  wm.setConfigPortalTimeout(30); // auto close configportal after n seconds
+
+  bool res;
+  res = wm.autoConnect(WIFI_SSID,WIFI_PW); // password protected ap
+
+  if(!res) {
+    Serial.println("Failed to connect or hit timeout");
+    // ESP.restart();
+  } 
+  else {
+    //if you get here you have connected to the WiFi    
+    Serial.println("connected...yeey :)");
+  }
   dht1.begin();//for first DHT module
   dht2.begin();//for 2nd DHT module  and do the same for 3rd and 4th etc.
   
   // Setup MQTT subscription for onoff & slider feed.
-  pinMode(LED, OUTPUT);     // Initialize the LED pin as an output
   mqtt.subscribe(&onoffbutton);
   mqtt.subscribe(&slider);
-  //Test LED
-  Serial.println("Test LED");
-  Serial.println("LED ON");
-  digitalWrite(LED, HIGH); 
-  delay(5000);
-  Serial.println("LED OFF");
-  digitalWrite(LED, LOW); 
-  
 }
-uint32_t x=0;
+
+void checkButton(){
+  // check for button press
+  if ( digitalRead(TRIGGER_PIN) == LOW ) {
+    // poor mans debounce/press-hold, code not ideal for production
+    delay(50);
+    if( digitalRead(TRIGGER_PIN) == LOW ){
+      Serial.println("Button Pressed");
+      // still holding button for 3000 ms, reset settings, code not ideaa for production
+      delay(3000); // reset delay hold
+      if( digitalRead(TRIGGER_PIN) == LOW ){
+        Serial.println("Button Held");
+        Serial.println("Erasing Config, restarting");
+        wm.resetSettings();
+        ESP.restart();
+      }
+      
+      // start portal w delay
+      Serial.println("Starting config portal");
+      wm.setConfigPortalTimeout(120);
+      
+      if (!wm.startConfigPortal(WIFI_SSID2,WIFI_PW)) {
+        Serial.println("failed to connect or hit timeout");
+        delay(3000);
+        // ESP.restart();
+        wifiok = false;
+      } 
+      else {
+        //if you get here you have connected to the WiFi
+        Serial.println("connected...yeey :)");
+        wifiok = true; 
+      }
+    }
+  }
+}
+
+
+String getParam(String name){
+  //read parameter from server, for customhmtl input
+  String value;
+  if(wm.server->hasArg(name)) {
+    value = wm.server->arg(name);
+  }
+  return value;
+}
+
+void saveParamCallback(){
+  Serial.println("[CALLBACK] saveParamCallback fired");
+  Serial.println("PARAM customfieldid = " + getParam("customfieldid"));
+}
 
 void loop() {
+  if(wm_nonblocking) wm.process(); // avoid delays() in loop when non-blocking and other long running code  
+  checkButton();
+  // put your main code here, to run repeatedly:
   
+  // Ensure the connection to the MQTT server is alive (this will make the first
+  // connection and automatically reconnect when disconnected).  See the MQTT_connect
+  // function definition further below.
   MQTT_connect();
   //Sub
   Adafruit_MQTT_Subscribe *subscription;
@@ -93,10 +192,10 @@ void loop() {
       Serial.println((char *)onoffbutton.lastread);
       
       if (strcmp((char *)onoffbutton.lastread, "ON") == 0) {
-        digitalWrite(LED, LOW); 
+        digitalWrite(MOTOR1, LOW); 
       }
       if (strcmp((char *)onoffbutton.lastread, "OFF") == 0) {
-        digitalWrite(LED, HIGH); 
+        digitalWrite(MOTOR1, HIGH); 
       }
     }
     
@@ -111,9 +210,6 @@ void loop() {
   
    if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
    /************chuong trinh chinh cho vao day***************/
-  // Ensure the connection to the MQTT server is alive (this will make the first
-  // connection and automatically reconnect when disconnected).  See the MQTT_connect
-  // function definition further below.
   temperature1 = getTemp("c", 1); // get DHT1 temperature in C 
   humidity1 = getTemp("h", 1); // get DHT1 humidity
   temperature2 = getTemp("c", 2); // get DHT2 temperature in C 
@@ -165,7 +261,7 @@ void loop() {
   if(! mqtt.ping()) {
     mqtt.disconnect();
   }
-  portal.handleClient();
+  
 }
 
 //Chuong trinh con
@@ -180,8 +276,7 @@ void loop() {
  * getTemp("c", 1) is used to get Celsius for first DHT
  * getTemp("h", 2) is used to get humidity for 2nd DHT
  */
-float getTemp(String req, int dhtCount)
-{
+float getTemp(String req, int dhtCount){
 
 if(dhtCount ==1){
   // Reading temperature or humidity takes about 250 milliseconds!
@@ -191,7 +286,6 @@ if(dhtCount ==1){
   float t1 = dht1.readTemperature();
     // Read temperature as Fahrenheit (isFahrenheit = true)
   float f1 = dht1.readTemperature(true);
-
 
   // Check if any reads failed and exit early (to try again).
   if (isnan(h1) || isnan(t1)|| isnan(f1)) {
