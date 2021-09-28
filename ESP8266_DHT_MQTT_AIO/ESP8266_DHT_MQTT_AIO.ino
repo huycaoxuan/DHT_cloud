@@ -10,12 +10,12 @@
 #include "Adafruit_MQTT_Client.h"
 #include "secrets.h"
 
-#define TRIGGER_PIN 2 //Nut bam setup wifi
+#define TRIGGER_PIN 4 //Nut bam setup wifi
 #define DHT1_PIN 14
 #define DHT2_PIN 5
 #define DHT3_PIN 13
 #define MOTOR1 12 // the on off button feed turns this MOTOR1 on/off
-#define S_LED 4 // LED bao trang thai
+#define S_LED 15 // LED bao trang thai
 #define DHTTYPE DHT11   // DHT11, DHT21 (for DHT 21, AM2301), DHT22 (for DHT 22, AM2302, AM2321)
 DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
 DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
