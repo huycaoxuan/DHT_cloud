@@ -81,7 +81,12 @@ void setup() {
   pinMode(TRIGGER_PIN, INPUT);
   pinMode(MOTOR1, OUTPUT);     // Initialize the MOTOR1 pin as an output
   pinMode(S_LED, OUTPUT);
+
+  // Setup statement
   digitalWrite(MOTOR1, LOW);
+  digitalWrite(S_LED, LOW);
+  wifiok = false;
+
   // wm.resetSettings(); // wipe settings
 
   if(wm_nonblocking) wm.setConfigPortalBlocking(false);
