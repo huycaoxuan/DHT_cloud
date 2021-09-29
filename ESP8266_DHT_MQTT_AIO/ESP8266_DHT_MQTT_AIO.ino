@@ -22,6 +22,7 @@ DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
 DHT dht3(DHT3_PIN, DHTTYPE);// for 3rd DHT module
 
 #define MQTT_UPDATE_INTERVAL 60000 //Thoi gian moi lan update len cloud
+#define LED_INTERVAL 500 // Thoi gian tre khi Led nhay
 float humidity1 = 0.00 ;
 float temperature1 = 0.00 ;
 float humidity2 = 0.00 ;
