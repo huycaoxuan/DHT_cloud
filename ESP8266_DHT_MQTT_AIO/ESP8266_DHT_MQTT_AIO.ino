@@ -10,13 +10,13 @@
 #include "Adafruit_MQTT_Client.h"
 #include "secrets.h"
 
-#define TRIGGER_PIN 4 //Nut bam setup wifi
-#define DHT1_PIN 14
-#define DHT2_PIN 5
-#define DHT3_PIN 13
-#define MOTOR1 12 // the on off button feed turns this MOTOR1 on/off
-#define S_LED 15 // LED bao trang thai
-#define DHTTYPE DHT11   // DHT11, DHT21 (for DHT 21, AM2301), DHT22 (for DHT 22, AM2302, AM2321)
+#define TRIGGER_PIN 5 //D1 Nut bam setup wifi 
+#define DHT1_PIN 12 //D6
+#define DHT2_PIN 13 //D7
+#define DHT3_PIN 14 //D5
+#define RELAY1 15 //D8 the on off button feed turns this RELAY1 on/off
+#define S_LED 2 //LED buildin   LED bao trang thai 
+#define DHTTYPE DHT22   // DHT11, DHT21 (for DHT 21, AM2301), DHT22 (for DHT 22, AM2302, AM2321)
 DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
 DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
 DHT dht3(DHT3_PIN, DHTTYPE);// for 3rd DHT module
@@ -79,11 +79,11 @@ void setup() {
   delay(3000);
   Serial.println("\n Starting");
   pinMode(TRIGGER_PIN, INPUT);
-  pinMode(MOTOR1, OUTPUT);     // Initialize the MOTOR1 pin as an output
+  pinMode(RELAY1, OUTPUT);     // Initialize the RELAY1 pin as an output
   pinMode(S_LED, OUTPUT);
 
   // Setup statement
-  digitalWrite(MOTOR1, LOW);
+  digitalWrite(RELAY1, LOW);
   digitalWrite(S_LED, LOW);
   wifiok = false;
 
@@ -127,8 +127,10 @@ void setup() {
     Serial.println("connected...yeey :)");
     wifiok = true;
   }
-  dht1.begin();//for first DHT module
-  dht2.begin();//for 2nd DHT module  and do the same for 3rd and 4th etc.
+  //DHT begin
+  dht1.begin();
+  dht2.begin();
+  dht3.begin();
   
   // Setup MQTT subscription for onoff & slider feed.
   mqtt.subscribe(&onoffbutton);
@@ -206,11 +208,11 @@ void loop() {
       Serial.println((char *)onoffbutton.lastread);
       
       if (strcmp((char *)onoffbutton.lastread, "ON") == 0) {
-        digitalWrite(MOTOR1, HIGH); 
+        digitalWrite(RELAY1, HIGH); 
         hum_status.publish(1);
       }
       if (strcmp((char *)onoffbutton.lastread, "OFF") == 0) {
-        digitalWrite(MOTOR1, LOW);
+        digitalWrite(RELAY1, LOW);
         hum_status.publish(0); 
       }
     }
@@ -241,8 +243,8 @@ void loop() {
   humidity1 = getTemp("h", 1); // get DHT1 humidity
   temperature2 = getTemp("c", 2); // get DHT2 temperature in C 
   humidity2 = getTemp("h", 2); // get DHT2 humidity
-  //temperature3 = getTemp("c", 3); // get DHT3 temperature in C  // Chu y set ve cam bien 3 sau khi lap
-  //humidity3 = getTemp("h", 3); // get DHT3 humidity             // Chu y set ve cam bien 3 sau khi lap
+  temperature3 = getTemp("c", 3); // get DHT3 temperature in C 
+  humidity3 = getTemp("h", 3); // get DHT3 humidity             
 
   //Publish Sensor 1
   Serial.print(F("\nSending Temperature 1 "));
@@ -384,6 +386,31 @@ if(dhtCount ==2){
   }
 }// DHT2 end
 
+if(dhtCount ==3){
+  // Reading temperature or humidity takes about 250 milliseconds!
+  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+  float h3 = dht3.readHumidity();
+  // Read temperature as Celsius (the default)
+  float t3 = dht3.readTemperature();
+    // Read temperature as Fahrenheit (isFahrenheit = true)
+  float f3 = dht3.readTemperature(true);
+
+
+  // Check if any reads failed and exit early (to try again).
+  if (isnan(h3) || isnan(t3)|| isnan(f3)) {
+    Serial.println("Failed to read from DHT 3 sensor!");
+    //return;
+  }
+  
+  if(req =="c"){
+    return t3;//return Cilsus
+  }else if(req =="h"){
+    return h3;// return humidity
+  }else{
+    return 0.000;// if no reqest found, retun 0.000
+  }
+}// DHT3 end
+
 }//getTemp end
 
 
@@ -417,14 +444,14 @@ void MQTT_connect() {
 void Control_humidifier() {
     if(humidity1<sliderval){
         Serial.println("It's not enought humidity!");
-        digitalWrite(MOTOR1, HIGH); 
+        digitalWrite(RELAY1, HIGH); 
         Serial.println("Turn on Humidifier!");
         hum_status.publish(1);
         delay(500);
     }
     else{
         Serial.println("Humidity ok!");
-        digitalWrite(MOTOR1, LOW); 
+        digitalWrite(RELAY1, LOW); 
         Serial.println("Turn off Humidifier!");
         hum_status.publish(0);
         delay(500);
