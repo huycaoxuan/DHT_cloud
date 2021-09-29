@@ -22,7 +22,7 @@ DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
 DHT dht3(DHT3_PIN, DHTTYPE);// for 3rd DHT module
 
 #define MQTT_UPDATE_INTERVAL 60000 //Thoi gian moi lan update len cloud
-#define LED_INTERVAL 500 // Thoi gian tre khi Led nhay
+//#define LED_INTERVAL 500 // Thoi gian tre khi Led nhay
 float humidity1 = 0.00 ;
 float temperature1 = 0.00 ;
 float humidity2 = 0.00 ;
@@ -33,6 +33,14 @@ bool wifiok = false;     //Wifi status
 //bool MQTT_status = false; //MQTT status
 bool auto_mode = false;
 uint16_t sliderval;
+
+// Variables will change:
+int ledState = LOW;             // ledState used to set the LED
+long previousMillis = 0;        // will store last time LED was updated
+
+// the follow variables is a long because the time, measured in miliseconds,
+// will quickly become a bigger number than can be stored in an int.
+long interval = 1000;           // interval at which to blink (milliseconds)
 
 //String dataString;
 //char charBuf[100];
