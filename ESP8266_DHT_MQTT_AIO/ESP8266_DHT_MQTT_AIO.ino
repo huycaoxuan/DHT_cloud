@@ -40,7 +40,7 @@ long previousMillis = 0;        // will store last time LED was updated
 
 // the follow variables is a long because the time, measured in miliseconds,
 // will quickly become a bigger number than can be stored in an int.
-long interval = 1000;           // interval at which to blink (milliseconds)
+long led_interval = 300;           // interval at which to blink (milliseconds)
 
 //String dataString;
 //char charBuf[100];
@@ -325,8 +325,24 @@ void loop() {
   }
   }
   else {
-    digitalWrite(S_LED, HIGH);
+    //digitalWrite(S_LED, HIGH);
     //Serial.println("Wifi Error!!!");
+    // Nhay LED tai day
+    unsigned long currentMillis = millis();
+ 
+    if(currentMillis - previousMillis > led_interval) {
+      // save the last time you blinked the LED 
+      previousMillis = currentMillis;   
+
+      // if the LED is off turn it on and vice-versa:
+      if (ledState == LOW)
+        ledState = HIGH;
+      else
+        ledState = LOW;
+
+      // set the LED with the ledState of the variable:
+      digitalWrite(S_LED, ledState);
+    }
   }
   
 }
