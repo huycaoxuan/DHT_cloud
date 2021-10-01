@@ -11,11 +11,11 @@
 #include "secrets.h"
 
 #define TRIGGER_PIN 5 //D1 Nut bam setup wifi 
-#define DHT1_PIN 12 //D6
-#define DHT2_PIN 13 //D7
-#define DHT3_PIN 14 //D5
-#define RELAY1 15 //D8 the on off button feed turns this RELAY1 on/off
-#define S_LED 2 //LED buildin   LED bao trang thai 
+#define DHT1_PIN 12   //D6
+#define DHT2_PIN 13   //D7
+#define DHT3_PIN 14   //D5
+#define RELAY1 15     //D8 the on off button feed turns this RELAY1 on/off
+#define S_LED 2       //D4 LED buildin   LED bao trang thai 
 #define DHTTYPE DHT22   // DHT11, DHT21 (for DHT 21, AM2301), DHT22 (for DHT 22, AM2302, AM2321)
 DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
 DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
@@ -198,17 +198,13 @@ void saveParamCallback(){
 
 void loop() {
   if(wm_nonblocking) wm.process(); // avoid delays() in loop when non-blocking and other long running code  
-  checkButton();
-  // put your main code here, to run repeatedly:
-  
-  // Ensure the connection to the MQTT server is alive (this will make the first
-  // connection and automatically reconnect when disconnected).  See the MQTT_connect
-  // function definition further below.
+  //checkButton(); 
   
   if (wifiok) {                                     //Neu wifi ok thi ket noi voi MQTT
   digitalWrite(S_LED, LOW);
   MQTT_connect();
-  //Sub
+  
+  //Sub button and slider
   Adafruit_MQTT_Subscribe *subscription;
   while ((subscription = mqtt.readSubscription(5000))) {
     // Check if its the onoff button feed
@@ -245,9 +241,8 @@ void loop() {
       //analogWrite(PWMOUT, sliderval);
       }
      }
-  
+//Publish Sensors data
    if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
-   /************chuong trinh chinh cho vao day***************/
   temperature1 = getTemp("c", 1); // get DHT1 temperature in C 
   humidity1 = getTemp("h", 1); // get DHT1 humidity
   temperature2 = getTemp("c", 2); // get DHT2 temperature in C 
@@ -329,22 +324,18 @@ void loop() {
     //Serial.println("Wifi Error!!!");
     // Nhay LED tai day
     unsigned long currentMillis = millis();
- 
     if(currentMillis - previousMillis > led_interval) {
       // save the last time you blinked the LED 
       previousMillis = currentMillis;   
-
       // if the LED is off turn it on and vice-versa:
       if (ledState == LOW)
         ledState = HIGH;
       else
         ledState = LOW;
-
       // set the LED with the ledState of the variable:
       digitalWrite(S_LED, ledState);
     }
   }
-  
 }
 
 //Chuong trinh con
