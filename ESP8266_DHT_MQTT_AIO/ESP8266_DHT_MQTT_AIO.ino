@@ -11,35 +11,60 @@
 #include "secrets.h"
 
 #define TRIGGER_PIN 5 //D1 Nut bam setup wifi 
-#define DHT1_PIN 12   //D6
-#define DHT2_PIN 13   //D7
-#define DHT3_PIN 14   //D5
+#define DHT1_PIN 14   //D5 
+#define DHT2_PIN 12   //D6 
+#define DHT3_PIN 13   //D7
 #define RELAY1 15     //D8 the on off button feed turns this RELAY1 on/off
-#define S_LED 2       //D4 LED buildin   LED bao trang thai 
+#define S_LED 2       //D4 LED buildin  LED bao trang thai 
+
+#define PRESSED LOW
+#define NOT_PRESSED HIGH
+
+//const unsigned long shortPress = 100;
+//const unsigned long  longPress = 1000;
+long blinkInterval = 100;
+unsigned long previousBlink=0;
+
+bool ledState = true;
+bool blinkState = true;
+bool relayState = false;
+
+/*
+typedef struct Buttons {
+    const byte pin = 5; //D1 Nut bam setup wifi 
+    const int debounce = 10;
+    unsigned long counter=0;
+    bool prevState = NOT_PRESSED;
+    bool currentState;
+} Button;
+// create a Button variable type
+Button button;
+*/
+
 #define DHTTYPE DHT22   // DHT11, DHT21 (for DHT 21, AM2301), DHT22 (for DHT 22, AM2302, AM2321)
 DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
 DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
 DHT dht3(DHT3_PIN, DHTTYPE);// for 3rd DHT module
 
 #define MQTT_UPDATE_INTERVAL 60000 //Thoi gian moi lan update len cloud
-//#define LED_INTERVAL 500 // Thoi gian tre khi Led nhay
+
 float humidity1 = 0.00 ;
 float temperature1 = 0.00 ;
 float humidity2 = 0.00 ;
 float temperature2 = 0.00 ;
 float humidity3 = 0.00 ;
 float temperature3 = 0.00 ;
+bool res;
 bool wifiok = false;     //Wifi status
-//bool MQTT_status = false; //MQTT status
+
 bool auto_mode = false;
 uint16_t sliderval;
 
 // Variables will change:
-int ledState = LOW;             // ledState used to set the LED
+//int ledState = LOW;             // ledState used to set the LED
 long previousMillis = 0;        // will store last time LED was updated
 
-// the follow variables is a long because the time, measured in miliseconds,
-// will quickly become a bigger number than can be stored in an int.
+
 long led_interval = 300;           // interval at which to blink (milliseconds)
 
 //String dataString;
@@ -87,13 +112,14 @@ void setup() {
   Serial.setDebugOutput(true);  
   delay(3000);
   Serial.println("\n Starting");
-  pinMode(TRIGGER_PIN, INPUT);
+//  pinMode(button.pin, INPUT_PULLUP);
   pinMode(RELAY1, OUTPUT);     // Initialize the RELAY1 pin as an output
   pinMode(S_LED, OUTPUT);
+  pinMode(TRIGGER_PIN, INPUT_PULLUP);
 
   // Setup statement
   digitalWrite(RELAY1, LOW);
-  digitalWrite(S_LED, LOW);
+  digitalWrite(S_LED, HIGH);
   wifiok = false;
 
   // wm.resetSettings(); // wipe settings
@@ -122,9 +148,8 @@ void setup() {
   wm.setClass("invert");
 
   // wm.setConnectTimeout(20); // how long to try to connect for before continuing
-  wm.setConfigPortalTimeout(30); // auto close configportal after n seconds
+  wm.setConfigPortalTimeout(60); // auto close configportal after n seconds
 
-  bool res;
   res = wm.autoConnect(WIFI_SSID01,WIFI_PW); // password protected ap
 
   if(!res) {
@@ -146,22 +171,34 @@ void setup() {
   mqtt.subscribe(&slider);
 }
 
+//Check button (wifi manager example)
 void checkButton(){
   // check for button press
-  if ( digitalRead(TRIGGER_PIN) == LOW ) {
+  //if ( digitalRead(TRIGGER_PIN) == LOW ) {
     // poor mans debounce/press-hold, code not ideal for production
-    delay(50);
+    //delay(50);
     if( digitalRead(TRIGGER_PIN) == LOW ){
       Serial.println("Button Pressed");
+      relayState = !relayState;
+      digitalWrite(RELAY1, relayState);
+      if (relayState){
+      hum_status.publish(1);
+      Serial.println("Relay ON!");
+      } else {
+        hum_status.publish(0);
+        Serial.println("Relay OFF!");
+      }
       // still holding button for 3000 ms, reset settings, code not ideaa for production
       delay(3000); // reset delay hold
       if( digitalRead(TRIGGER_PIN) == LOW ){
         Serial.println("Button Held");
         Serial.println("Erasing Config, restarting");
         wm.resetSettings();
+        delay(50);
         ESP.restart();
-      }
-      
+      }  
+
+      /*
       // start portal w delay
       Serial.println("Starting config portal");
       wm.setConfigPortalTimeout(120);
@@ -177,9 +214,10 @@ void checkButton(){
         Serial.println("connected...yeey :)");
         wifiok = true; 
       }
-    }
+      */
   }
 }
+
 
 
 String getParam(String name){
@@ -197,10 +235,46 @@ void saveParamCallback(){
 }
 
 void loop() {
-  if(wm_nonblocking) wm.process(); // avoid delays() in loop when non-blocking and other long running code  
-  //checkButton(); 
+  if(wm_nonblocking) wm.process(); // avoid delays() in loop when non-blocking and other long running code 
+  if(res) { 
+    wifiok = true;
+  }
+  checkButton(); 
+  
+  /* // check the button
+  button.currentState = digitalRead(button.pin);
+
+  // has it changed?
+  if (button.currentState != button.prevState) {
+      delay(button.debounce);
+      // update status in case of bounce
+      button.currentState = digitalRead(button.pin);
+      if (button.currentState == PRESSED) {
+          // a new press event occured
+          // record when button went down
+          button.counter = millis();
+      }
+
+      if (button.currentState == NOT_PRESSED) {
+          // but no longer pressed, how long was it down?
+          unsigned long currentMillis = millis();
+          //if ((currentMillis - button.counter >= shortPress) && !(currentMillis - button.counter >= longPress)) {
+          if ((currentMillis - button.counter >= shortPress) && !(currentMillis - button.counter >= longPress)) {
+              // short press detected. 
+              handleShortPress();
+          }
+          if ((currentMillis - button.counter >= longPress)) {
+              // the long press was detected
+              handleLongPress();
+          }
+      }
+      // used to detect when state changes
+      button.prevState = button.currentState;
+  }
+  */
   
   if (wifiok) {                                     //Neu wifi ok thi ket noi voi MQTT
+  blinkState = false;
   digitalWrite(S_LED, LOW);
   MQTT_connect();
   
@@ -323,19 +397,9 @@ void loop() {
     //digitalWrite(S_LED, HIGH);
     //Serial.println("Wifi Error!!!");
     // Nhay LED tai day
-    unsigned long currentMillis = millis();
-    if(currentMillis - previousMillis > led_interval) {
-      // save the last time you blinked the LED 
-      previousMillis = currentMillis;   
-      // if the LED is off turn it on and vice-versa:
-      if (ledState == LOW)
-        ledState = HIGH;
-      else
-        ledState = LOW;
-      // set the LED with the ledState of the variable:
-      digitalWrite(S_LED, ledState);
-    }
+    blinkState = true;
   }
+  blinkLED();
 }
 
 //Chuong trinh con
@@ -446,6 +510,7 @@ void MQTT_connect() {
        Serial.println(mqtt.connectErrorString(ret));
        Serial.println("Retrying MQTT connection in 5 seconds...");
        mqtt.disconnect();
+       digitalWrite(S_LED, HIGH);
        delay(5000);  // wait 5 seconds
        retries--;
        if (retries == 0) {
@@ -454,22 +519,56 @@ void MQTT_connect() {
        }
   }
   Serial.println("MQTT Connected!");
+  digitalWrite(S_LED, LOW);
   //MQTT_status = true;
 }
 
 void Control_humidifier() {
     if(humidity1<sliderval){
-        Serial.println("It's not enought humidity!");
-        digitalWrite(RELAY1, HIGH); 
         Serial.println("Turn on Humidifier!");
+        relayState = true;
+        digitalWrite(RELAY1, relayState); 
         hum_status.publish(1);
         delay(500);
     }
     else{
         Serial.println("Humidity ok!");
-        digitalWrite(RELAY1, LOW); 
+        relayState = false;
+        digitalWrite(RELAY1, relayState);  
         Serial.println("Turn off Humidifier!");
         hum_status.publish(0);
         delay(500);
     }
   }
+
+/*
+void handleShortPress() {
+    //blinkState = false;
+    Serial.println("Button click!");
+    relayState = !relayState;
+    digitalWrite(RELAY1, relayState);
+}
+ 
+void handleLongPress() {
+      digitalWrite(S_LED, HIGH);
+      Serial.println("Button Held");
+      Serial.println("Erasing Config, restarting");
+      wm.resetSettings();
+      ESP.restart();
+    //blinkState = true;
+    //ledState = true;
+    //blinkInterval = 100;
+}
+*/
+ 
+void blinkLED() {
+    // blink the LED (or don't!)
+    if (blinkState) {
+        if (millis() - previousBlink >= blinkInterval) {
+            // blink the LED
+            ledState = !ledState;
+            previousBlink = millis();
+        }
+    } 
+    digitalWrite(S_LED, ledState);
+}
