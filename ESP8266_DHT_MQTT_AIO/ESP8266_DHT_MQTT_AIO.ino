@@ -236,8 +236,12 @@ void saveParamCallback(){
 
 void loop() {
   if(wm_nonblocking) wm.process(); // avoid delays() in loop when non-blocking and other long running code 
-  if(res) { 
+  if (WiFi.status() == WL_CONNECTED){
     wifiok = true;
+  }
+  else{
+    wifiok = false;
+    blinkState = true;
   }
   checkButton(); 
   
