@@ -8,7 +8,7 @@
 #include "DHT.h"
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
-#include <EEPROM.h>
+//#include <EEPROM.h>
 #include "secrets.h"
 
 #define TRIGGER_PIN 5 //D1 Nut bam setup wifi 
@@ -128,7 +128,7 @@ void setup() {
   wm.setConfigPortalTimeout(120); // auto close configportal after n seconds
 
   res = wm.autoConnect(WIFI_SSID01,WIFI_PW); // password protected ap
-
+  blink_led(3);
   if(!res) {
     Serial.println("Failed to connect or hit timeout");
     // ESP.restart();
@@ -326,7 +326,10 @@ void MQTT_connect() {
        Serial.println("Retrying MQTT connection in 5 seconds...");
        mqtt.disconnect();
        digitalWrite(S_LED, HIGH);
-       delay(5000);  // wait 5 seconds
+       blink_led(2);
+       delay(500);
+       blink_led(2);
+       //delay(5000);  // wait 5 seconds
        retries--;
        if (retries == 0) {
          // basically die and wait for WDT to reset me
@@ -471,3 +474,15 @@ void sub_Button(){
     }
   }
 }
+
+void blink_led(int ledBlinkNum) {
+int i=0;
+while (i < ledBlinkNum) {
+digitalWrite(S_LED, HIGH);
+delay (200);
+digitalWrite(S_LED, LOW);
+delay (200);
+i=i++;
+}
+}
+
