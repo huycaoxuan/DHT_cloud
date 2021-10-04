@@ -1,13 +1,14 @@
 /**
  * Ghi du lieu tu cam bien DHT 
  * lib: Wifimanager, AIO, DHT
- * Implements TRIGGEN_PIN button press, press for ondemand configportal, hold for 3 seconds for reset settings.
+ * Implements TRIGGEN_PIN button press, press for turn on/off, hold for 3 seconds for reset settings.
  */
 #include <WiFiManager.h>
 #include <ESP8266WebServer.h>
 #include "DHT.h"
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
+#include <EEPROM.h>
 #include "secrets.h"
 
 #define TRIGGER_PIN 5 //D1 Nut bam setup wifi 
@@ -20,33 +21,18 @@
 #define PRESSED LOW
 #define NOT_PRESSED HIGH
 
-//const unsigned long shortPress = 100;
-//const unsigned long  longPress = 1000;
 long blinkInterval = 100;
 unsigned long previousBlink=0;
-
 bool ledState = true;
 bool blinkState = true;
 bool relayState = false;
-
-/*
-typedef struct Buttons {
-    const byte pin = 5; //D1 Nut bam setup wifi 
-    const int debounce = 10;
-    unsigned long counter=0;
-    bool prevState = NOT_PRESSED;
-    bool currentState;
-} Button;
-// create a Button variable type
-Button button;
-*/
 
 #define DHTTYPE DHT22   // DHT11, DHT21 (for DHT 21, AM2301), DHT22 (for DHT 22, AM2302, AM2321)
 DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
 DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
 DHT dht3(DHT3_PIN, DHTTYPE);// for 3rd DHT module
 
-#define MQTT_UPDATE_INTERVAL 60000 //Thoi gian moi lan update len cloud
+#define MQTT_UPDATE_INTERVAL 120000 //Thoi gian moi lan update len cloud
 
 float humidity1 = 0.00 ;
 float temperature1 = 0.00 ;
@@ -54,24 +40,15 @@ float humidity2 = 0.00 ;
 float temperature2 = 0.00 ;
 float humidity3 = 0.00 ;
 float temperature3 = 0.00 ;
+float avg_hum;
 bool res;
-bool wifiok = false;     //Wifi status
 
 bool auto_mode = false;
 uint16_t sliderval;
 
-// Variables will change:
-//int ledState = LOW;             // ledState used to set the LED
 long previousMillis = 0;        // will store last time LED was updated
-
-
 long led_interval = 300;           // interval at which to blink (milliseconds)
 
-//String dataString;
-//char charBuf[100];
-//const unsigned long mqtt_interval = 5000; //Thoi gian ket noi lai MQTT
-//unsigned long previousTime = 0;
-//bool retries_status = false;
 unsigned long   lastPub = 0;
 
 // wifimanager can run in a blocking mode or a non blocking mode
@@ -100,6 +77,7 @@ Adafruit_MQTT_Publish hum2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/h
 Adafruit_MQTT_Publish temp3 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/temp3");
 Adafruit_MQTT_Publish hum3 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/humidity3");
 Adafruit_MQTT_Publish hum_status = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/humidifier-status");
+Adafruit_MQTT_Publish pub_infor01 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/infor01");
 //Sub
 Adafruit_MQTT_Subscribe onoffbutton = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/switch1");
 Adafruit_MQTT_Subscribe slider = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/slider1"); // for setting the threshold of automatic turn on humidifier
@@ -120,7 +98,6 @@ void setup() {
   // Setup statement
   digitalWrite(RELAY1, LOW);
   digitalWrite(S_LED, HIGH);
-  wifiok = false;
 
   // wm.resetSettings(); // wipe settings
 
@@ -148,7 +125,7 @@ void setup() {
   wm.setClass("invert");
 
   // wm.setConnectTimeout(20); // how long to try to connect for before continuing
-  wm.setConfigPortalTimeout(60); // auto close configportal after n seconds
+  wm.setConfigPortalTimeout(120); // auto close configportal after n seconds
 
   res = wm.autoConnect(WIFI_SSID01,WIFI_PW); // password protected ap
 
@@ -159,7 +136,7 @@ void setup() {
   else {
     //if you get here you have connected to the WiFi    
     Serial.println("connected...yeey :)");
-    wifiok = true;
+    //wifiok = true;
   }
   //DHT begin
   dht1.begin();
@@ -197,28 +174,8 @@ void checkButton(){
         delay(50);
         ESP.restart();
       }  
-
-      /*
-      // start portal w delay
-      Serial.println("Starting config portal");
-      wm.setConfigPortalTimeout(120);
-      
-      if (!wm.startConfigPortal(WIFI_SSID02,WIFI_PW)) {
-        Serial.println("failed to connect or hit timeout");
-        delay(3000);
-        // ESP.restart();
-        wifiok = false;
-      } 
-      else {
-        //if you get here you have connected to the WiFi
-        Serial.println("connected...yeey :)");
-        wifiok = true; 
-      }
-      */
   }
 }
-
-
 
 String getParam(String name){
   //read parameter from server, for customhmtl input
@@ -237,187 +194,43 @@ void saveParamCallback(){
 void loop() {
   if(wm_nonblocking) wm.process(); // avoid delays() in loop when non-blocking and other long running code 
   if (WiFi.status() == WL_CONNECTED){
-    wifiok = true;
+    blinkState = false;
+    digitalWrite(S_LED, LOW);
+    MQTT_connect();
+    sub_Button(); //Sub button and slider
+    //Publish Sensors data and Relay state
+    if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
+      temperature1 = getTemp("c", 1); // get DHT1 temperature in C 
+      humidity1 = getTemp("h", 1); // get DHT1 humidity
+      temperature2 = getTemp("c", 2); // get DHT2 temperature in C 
+      humidity2 = getTemp("h", 2); // get DHT2 humidity
+      temperature3 = getTemp("c", 3); // get DHT3 temperature in C 
+      humidity3 = getTemp("h", 3); // get DHT3 humidity  
+      avg_hum = (humidity1 + humidity2 + humidity3)/3;
+      pub_DHT();
+      Serial.print("Average humidity:");
+      Serial.println(avg_hum);
+      //hum_status.publish(relayState); 
+      if (auto_mode && humidity1>0 && humidity2>0 &&humidity3>0 ) {
+      Control_humidifier();
+      }  
+      lastPub = millis();
+    }
+    // ping the server to keep the mqtt connection alive
+    if(! mqtt.ping()) {
+      mqtt.disconnect();
+    }
   }
   else{
-    wifiok = false;
-    blinkState = true;
+    blinkState = true; // Nhay Led bao loi wifi
+    auto_mode = false; // Che do dieu khien bang tay
   }
   checkButton(); 
-  
-  /* // check the button
-  button.currentState = digitalRead(button.pin);
-
-  // has it changed?
-  if (button.currentState != button.prevState) {
-      delay(button.debounce);
-      // update status in case of bounce
-      button.currentState = digitalRead(button.pin);
-      if (button.currentState == PRESSED) {
-          // a new press event occured
-          // record when button went down
-          button.counter = millis();
-      }
-
-      if (button.currentState == NOT_PRESSED) {
-          // but no longer pressed, how long was it down?
-          unsigned long currentMillis = millis();
-          //if ((currentMillis - button.counter >= shortPress) && !(currentMillis - button.counter >= longPress)) {
-          if ((currentMillis - button.counter >= shortPress) && !(currentMillis - button.counter >= longPress)) {
-              // short press detected. 
-              handleShortPress();
-          }
-          if ((currentMillis - button.counter >= longPress)) {
-              // the long press was detected
-              handleLongPress();
-          }
-      }
-      // used to detect when state changes
-      button.prevState = button.currentState;
-  }
-  */
-  
-  if (wifiok) {                                     //Neu wifi ok thi ket noi voi MQTT
-  blinkState = false;
-  digitalWrite(S_LED, LOW);
-  MQTT_connect();
-  
-  //Sub button and slider
-  Adafruit_MQTT_Subscribe *subscription;
-  while ((subscription = mqtt.readSubscription(5000))) {
-    // Check if its the onoff button feed
-    if (subscription == &onoffbutton) {
-      Serial.print(F("On-Off button: "));
-      Serial.println((char *)onoffbutton.lastread);
-      
-      if (strcmp((char *)onoffbutton.lastread, "ON") == 0) {
-        digitalWrite(RELAY1, HIGH); 
-        hum_status.publish(1);
-      }
-      if (strcmp((char *)onoffbutton.lastread, "OFF") == 0) {
-        digitalWrite(RELAY1, LOW);
-        hum_status.publish(0); 
-      }
-    }
-    
-    //check if its the slider feed
-    if (subscription == &slider) {
-      Serial.print(F("Slider: "));
-      Serial.println((char *)slider.lastread);
-      sliderval = atoi((char *)slider.lastread);  // convert to a number
-      
-      if (sliderval == 0){
-         auto_mode = false;
-         Serial.println("Manual mode!");
-      } 
-      else {
-         auto_mode = true;
-         Serial.println("Automatic mode !");
-         Serial.print("Humidity threshold is:");
-         Serial.println(sliderval);
-        }
-      //analogWrite(PWMOUT, sliderval);
-      }
-     }
-//Publish Sensors data
-   if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
-  temperature1 = getTemp("c", 1); // get DHT1 temperature in C 
-  humidity1 = getTemp("h", 1); // get DHT1 humidity
-  temperature2 = getTemp("c", 2); // get DHT2 temperature in C 
-  humidity2 = getTemp("h", 2); // get DHT2 humidity
-  temperature3 = getTemp("c", 3); // get DHT3 temperature in C 
-  humidity3 = getTemp("h", 3); // get DHT3 humidity             
-
-  //Publish Sensor 1
-  Serial.print(F("\nSending Temperature 1 "));
-  Serial.print(temperature1);
-  Serial.print("...");
-  if (! temp.publish(temperature1)) {
-    Serial.println(F("Temp1 failed to publish!"));
-  } else {
-    Serial.println(F("Temp1 published!"));
-  }
-
-  Serial.print(F("\nSending Humidity "));
-  Serial.print(humidity1);
-  Serial.print("...");
-  if (! hum.publish(humidity1)) {
-    Serial.println(F("Hum1 failed to publish!"));
-  } else {
-    Serial.println(F("Hum1 published!"));
-  }
-
-  //Publish Sensor 2
-  Serial.print(F("\nSending Temperature 2 "));
-  Serial.print(temperature2);
-  Serial.print("...");
-  if (! temp2.publish(temperature2)) {
-    Serial.println(F("Temp2 failed to publish!"));
-  } else {
-    Serial.println(F("Temp2 published!"));
-  }
-
-  Serial.print(F("\nSending Humidity 2 "));
-  Serial.print(humidity2);
-  Serial.print("...");
-  if (! hum2.publish(humidity2)) {
-    Serial.println(F("Hum2 failed to publish!"));
-  } else {
-    Serial.println(F("Hum2 published!"));
-  }
-
-    //Publish Sensor 3
-  Serial.print(F("\nSending Temperature 3 "));
-  Serial.print(temperature3);                      
-  Serial.print("...");
-  if (! temp3.publish(temperature3)) {
-    Serial.println(F("Temp3 failed to publish!"));
-  } else {
-    Serial.println(F("Temp3 published!"));
-  }
-
-  Serial.print(F("\nSending Humidity 3 "));
-  Serial.print(humidity3);                        
-  Serial.print("...");
-  if (! hum3.publish(humidity3)) {
-    Serial.println(F("Hum3 failed to publish!"));
-  } else {
-    Serial.println(F("Hum3 published!"));
-  }
-  
-/******************Ket thuc chuong trinh chinh********************/
-
-    lastPub = millis();
-  }
-  if (auto_mode && humidity1>0) {
-    Control_humidifier();
-  }
-  // ping the server to keep the mqtt connection alive
-  if(! mqtt.ping()) {
-    mqtt.disconnect();
-  }
-  }
-  else {
-    //digitalWrite(S_LED, HIGH);
-    //Serial.println("Wifi Error!!!");
-    // Nhay LED tai day
-    blinkState = true;
-  }
   blinkLED();
 }
 
 //Chuong trinh con
 
-
-/*
- * getTemp(String req, int dhtCount)
- * returns the temprature related parameters
- * req is string request
- dhtCount is 1 or 2 or 3 as you wish
- * This code can display temprature in:
- * getTemp("c", 1) is used to get Celsius for first DHT
- * getTemp("h", 2) is used to get humidity for 2nd DHT
- */
 float getTemp(String req, int dhtCount){
 
 if(dhtCount ==1){
@@ -443,7 +256,6 @@ if(dhtCount ==1){
     return 0.000;// if no reqest found, retun 0.000
   }
 }// DHT1 end
-
 
 if(dhtCount ==2){
   // Reading temperature or humidity takes about 250 milliseconds!
@@ -507,7 +319,6 @@ void MQTT_connect() {
   if (mqtt.connected()) {
     return;
   }
-
   Serial.print("Connecting to MQTT... ");
   uint8_t retries = 3;
   while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
@@ -528,42 +339,24 @@ void MQTT_connect() {
 }
 
 void Control_humidifier() {
-    if(humidity1<sliderval){
+    if(avg_hum<sliderval){
         Serial.println("Turn on Humidifier!");
         relayState = true;
         digitalWrite(RELAY1, relayState); 
+        pub_infor01.publish("Auto: ON");
         hum_status.publish(1);
-        delay(500);
+        //delay(500);
     }
     else{
         Serial.println("Humidity ok!");
         relayState = false;
         digitalWrite(RELAY1, relayState);  
-        Serial.println("Turn off Humidifier!");
+        Serial.println("Da tat may tao am");
+        pub_infor01.publish("Auto: OFF");
         hum_status.publish(0);
-        delay(500);
+        //delay(500);
     }
   }
-
-/*
-void handleShortPress() {
-    //blinkState = false;
-    Serial.println("Button click!");
-    relayState = !relayState;
-    digitalWrite(RELAY1, relayState);
-}
- 
-void handleLongPress() {
-      digitalWrite(S_LED, HIGH);
-      Serial.println("Button Held");
-      Serial.println("Erasing Config, restarting");
-      wm.resetSettings();
-      ESP.restart();
-    //blinkState = true;
-    //ledState = true;
-    //blinkInterval = 100;
-}
-*/
  
 void blinkLED() {
     // blink the LED (or don't!)
@@ -575,4 +368,106 @@ void blinkLED() {
         }
     } 
     digitalWrite(S_LED, ledState);
+}
+
+void pub_DHT (){
+  //Publish Sensor 1
+  Serial.print(F("\nSending Temperature 1 "));
+  Serial.print(temperature1);
+  Serial.print("...");
+  if (! temp.publish(temperature1)) {
+    Serial.println(F("Temp1 failed to publish!"));
+  } else {
+    Serial.println(F("Temp1 published!"));
+  }
+  Serial.print(F("\nSending Humidity "));
+  Serial.print(humidity1);
+  Serial.print("...");
+  if (! hum.publish(humidity1)) {
+    Serial.println(F("Hum1 failed to publish!"));
+  } else {
+    Serial.println(F("Hum1 published!"));
+  }
+  
+  //Publish Sensor 2
+  Serial.print(F("\nSending Temperature 2 "));
+  Serial.print(temperature2);
+  Serial.print("...");
+  if (! temp2.publish(temperature2)) {
+    Serial.println(F("Temp2 failed to publish!"));
+  } else {
+    Serial.println(F("Temp2 published!"));
+  }
+  Serial.print(F("\nSending Humidity 2 "));
+  Serial.print(humidity2);
+  Serial.print("...");
+  if (! hum2.publish(humidity2)) {
+    Serial.println(F("Hum2 failed to publish!"));
+  } else {
+    Serial.println(F("Hum2 published!"));
+  }
+
+    //Publish Sensor 3
+  Serial.print(F("\nSending Temperature 3 "));
+  Serial.print(temperature3);                      
+  Serial.print("...");
+  if (! temp3.publish(temperature3)) {
+    Serial.println(F("Temp3 failed to publish!"));
+  } else {
+    Serial.println(F("Temp3 published!"));
+  }
+  Serial.print(F("\nSending Humidity 3 "));
+  Serial.print(humidity3);                        
+  Serial.print("...");
+  if (! hum3.publish(humidity3)) {
+    Serial.println(F("Hum3 failed to publish!"));
+  } else {
+    Serial.println(F("Hum3 published!"));
+  }
+  pub_infor01.publish("Updated.");
+}
+
+void sub_Button(){
+  //Sub button and slider
+  Adafruit_MQTT_Subscribe *subscription;
+  while ((subscription = mqtt.readSubscription(5000))) {
+    // Check if its the onoff button feed
+    if (subscription == &onoffbutton) {
+      Serial.print(F("On-Off button: "));
+      Serial.println((char *)onoffbutton.lastread);
+      if (strcmp((char *)onoffbutton.lastread, "ON") == 0) {
+        digitalWrite(RELAY1, HIGH);
+        pub_infor01.publish("Manual: ON"); 
+        hum_status.publish(1);
+      }
+      if (strcmp((char *)onoffbutton.lastread, "OFF") == 0) {
+        digitalWrite(RELAY1, LOW);
+        pub_infor01.publish("Manual: OFF");
+        hum_status.publish(0); 
+      }
+    }
+    
+    //check if its the slider feed
+    if (subscription == &slider) {
+      Serial.print(F("Slider: "));
+      Serial.println((char *)slider.lastread);
+      sliderval = atoi((char *)slider.lastread);  // convert to a number
+      
+      if (sliderval <= 30){
+         auto_mode = false;
+         Serial.println("Manual mode!");
+         pub_infor01.publish("Manual mode");
+         delay (500);
+      } 
+      else {
+         auto_mode = true;
+         Serial.println("Automatic mode !");
+         pub_infor01.publish("Automatic mode");
+         Serial.print("Humidity threshold is:"); 
+         Serial.println(sliderval);
+         delay (500);
+         pub_infor01.publish(sliderval);
+      }
+    }
+  }
 }
