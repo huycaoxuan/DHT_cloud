@@ -184,8 +184,10 @@ void checkButton(){
       if( digitalRead(TRIGGER_PIN) == LOW ){
         Serial.println("Button Held");
         Serial.println("Erasing Config, restarting");
+        EEPROM.write(2, 0);
+        EEPROM.commit();
         wm.resetSettings();
-        delay(50);
+        delay(100);
         ESP.restart();
       }  
   }
