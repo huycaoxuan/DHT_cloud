@@ -32,7 +32,7 @@ DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
 DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
 DHT dht3(DHT3_PIN, DHTTYPE);// for 3rd DHT module
 
-#define MQTT_UPDATE_INTERVAL 300000 //Thoi gian moi lan update len cloud
+#define MQTT_UPDATE_INTERVAL 120000 //Thoi gian moi lan update len cloud
 
 float humidity1 = 0.00 ;
 float temperature1 = 0.00 ;
@@ -102,8 +102,6 @@ void setup() {
   digitalWrite(RELAY1, LOW);
   digitalWrite(S_LED, HIGH);
 
-  // wm.resetSettings(); // wipe settings
-
   if(wm_nonblocking) wm.setConfigPortalBlocking(false);
 
   // add a custom input field
@@ -139,9 +137,6 @@ void setup() {
   else {
     //if you get here you have connected to the WiFi    
     Serial.println("connected...yeey :)");
-    //Serial.print("ERPROOM:");
-    //Serial.println(EEPROM.read(100););
-    //wifiok = true;
   }
   //DHT begin
   dht1.begin();
@@ -156,9 +151,6 @@ void setup() {
 //Check button (wifi manager example)
 void checkButton(){
   // check for button press
-  //if ( digitalRead(TRIGGER_PIN) == LOW ) {
-    // poor mans debounce/press-hold, code not ideal for production
-    //delay(50);
     if( digitalRead(TRIGGER_PIN) == LOW ){
       Serial.println("Button Pressed");
       relayState = !relayState;
@@ -229,10 +221,9 @@ void loop() {
       getTempAll ();
       pub_DHT();
       Serial.print("Average humidity:");
-      Serial.println(avg_hum);
-      //hum_status.publish(relayState); 
+      Serial.println(avg_hum); 
       if (hum_setting>0 && humidity1>0 && humidity2>0 &&humidity3>0 ) {
-      Control_humidifier();
+        autoControl();
       }  
       lastPub = millis();
     }
@@ -248,7 +239,7 @@ void loop() {
       Serial.print("Average humidity:");
       Serial.println(avg_hum);
       if (hum_setting>0 && humidity1>0 && humidity2>0 &&humidity3>0 ) {
-      Control_humidifier();
+        autoControl();
       }  
       lastPub = millis();
     }
@@ -369,7 +360,7 @@ void MQTT_connect() {
   //MQTT_status = true;
 }
 
-void Control_humidifier() {
+void autoControl() {
     if(avg_hum<hum_setting){
         Serial.println("Turn on Humidifier!");
         relayState = true;
