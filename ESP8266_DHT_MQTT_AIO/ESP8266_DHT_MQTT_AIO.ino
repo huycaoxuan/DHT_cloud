@@ -8,7 +8,7 @@
 #include "DHT.h"
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
-//#include <EEPROM.h>
+#include <EEPROM.h>
 #include "secrets.h"
 
 #define TRIGGER_PIN 5 //D1 Nut bam setup wifi 
@@ -32,7 +32,7 @@ DHT dht1(DHT1_PIN, DHTTYPE);//for first DHT module
 DHT dht2(DHT2_PIN, DHTTYPE);// for 2nd DHT module
 DHT dht3(DHT3_PIN, DHTTYPE);// for 3rd DHT module
 
-#define MQTT_UPDATE_INTERVAL 120000 //Thoi gian moi lan update len cloud
+#define MQTT_UPDATE_INTERVAL 300000 //Thoi gian moi lan update len cloud
 
 float humidity1 = 0.00 ;
 float temperature1 = 0.00 ;
@@ -41,10 +41,12 @@ float temperature2 = 0.00 ;
 float humidity3 = 0.00 ;
 float temperature3 = 0.00 ;
 float avg_hum;
+int hum_setting = 0;
 bool res;
 
 bool auto_mode = false;
 uint16_t sliderval;
+bool esp_state = true; //Trang thai cua ESP khi khoi dong
 
 long previousMillis = 0;        // will store last time LED was updated
 long led_interval = 300;           // interval at which to blink (milliseconds)
@@ -146,6 +148,7 @@ void setup() {
   // Setup MQTT subscription for onoff & slider feed.
   mqtt.subscribe(&onoffbutton);
   mqtt.subscribe(&slider);
+  checkHumSetting();
 }
 
 //Check button (wifi manager example)
@@ -160,13 +163,22 @@ void checkButton(){
       digitalWrite(RELAY1, relayState);
       if (relayState){
       hum_status.publish(1);
+      pub_infor01.publish("Button pressed! Relay ON");
       Serial.println("Relay ON!");
       } else {
         hum_status.publish(0);
+        pub_infor01.publish("Button pressed! Relay OFF");
         Serial.println("Relay OFF!");
       }
       // still holding button for 3000 ms, reset settings, code not ideaa for production
-      delay(3000); // reset delay hold
+      Serial.print("waiting");
+      int i = 0;
+      while (i<3) {
+        Serial.print(".");
+        delay(1000);
+        i++;
+      }
+      Serial.println("!");
       if( digitalRead(TRIGGER_PIN) == LOW ){
         Serial.println("Button Held");
         Serial.println("Erasing Config, restarting");
@@ -198,6 +210,15 @@ void loop() {
     digitalWrite(S_LED, LOW);
     MQTT_connect();
     sub_Button(); //Sub button and slider
+    if (esp_state){ // Kiem tra trang thai cua ESP neu moi khoi dong lai
+        if (! pub_infor01.publish("ESP just started.")) {
+        Serial.println(F("Pub_infor: ESP_status failed to publish!"));
+      } else {
+        Serial.println(F("Pub_infor: ESP_status published!"));
+        hum_status.publish(0);
+        esp_state = false;
+      }
+    }
     //Publish Sensors data and Relay state
     if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
       temperature1 = getTemp("c", 1); // get DHT1 temperature in C 
@@ -342,7 +363,7 @@ void MQTT_connect() {
 }
 
 void Control_humidifier() {
-    if(avg_hum<sliderval){
+    if(avg_hum<hum_setting){
         Serial.println("Turn on Humidifier!");
         relayState = true;
         digitalWrite(RELAY1, relayState); 
@@ -460,29 +481,59 @@ void sub_Button(){
          auto_mode = false;
          Serial.println("Manual mode!");
          pub_infor01.publish("Manual mode");
+         EEPROM.update(100, 0);
+         Serial.println("Update setting to EEPROM:0");
          delay (500);
       } 
+      else if (sliderval>100){
+         auto_mode = false;
+         Serial.println("Wrong input (0-30 Manual; 31-100 Auto)");
+         pub_infor01.publish("Wrong input (0-30 Manual; 31-100 Auto)");
+         EEPROM.update(100, 0);
+         Serial.println("Update setting to EEPROM:0");
+         delay (500);
+      }
       else {
          auto_mode = true;
          Serial.println("Automatic mode !");
          pub_infor01.publish("Automatic mode");
+         hum_setting = map(((int)sliderval),0,100,0,100);
+         EEPROM.update(100, hum_setting);
+         Serial.println("Update setting to EEPROM!");
          Serial.print("Humidity threshold is:"); 
-         Serial.println(sliderval);
+         Serial.println(hum_setting);
          delay (500);
-         pub_infor01.publish(sliderval);
+         pub_infor01.publish(hum_setting);
       }
     }
   }
 }
 
 void blink_led(int ledBlinkNum) {
-int i=0;
-while (i < ledBlinkNum) {
-digitalWrite(S_LED, HIGH);
-delay (200);
-digitalWrite(S_LED, LOW);
-delay (200);
-i=i++;
-}
+  int i=0;
+  while (i < ledBlinkNum) {
+    digitalWrite(S_LED, LOW);
+    delay (200);
+    digitalWrite(S_LED, HIGH);
+    delay (200);
+    i++;
+  }
 }
 
+void checkHumSetting() {
+   Serial.println("Humidity setting after restart: ");
+   hum_setting = EEPROM.read(100);
+   if(hum_setting>30) {
+       auto_mode = true;
+       Serial.println("Automatic mode !");
+       pub_infor01.publish("Automatic mode");
+       Serial.print("Humidity threshold is:"); 
+       Serial.println(hum_setting);
+       delay (500);
+       pub_infor01.publish(hum_setting);
+   }else {
+       auto_mode = false;
+       Serial.println("Manual mode!");
+       pub_infor01.publish("Manual mode");
+   }
+}
