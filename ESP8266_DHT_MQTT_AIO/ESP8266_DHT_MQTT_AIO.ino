@@ -224,13 +224,7 @@ void loop() {
     }
     //Publish Sensors data and Relay state
     if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
-      temperature1 = getTemp("c", 1); // get DHT1 temperature in C 
-      humidity1 = getTemp("h", 1); // get DHT1 humidity
-      temperature2 = getTemp("c", 2); // get DHT2 temperature in C 
-      humidity2 = getTemp("h", 2); // get DHT2 humidity
-      temperature3 = getTemp("c", 3); // get DHT3 temperature in C 
-      humidity3 = getTemp("h", 3); // get DHT3 humidity  
-      avg_hum = (humidity1 + humidity2 + humidity3)/3;
+      getTempAll ();
       pub_DHT();
       Serial.print("Average humidity:");
       Serial.println(avg_hum);
@@ -247,7 +241,15 @@ void loop() {
   }
   else{
     blinkState = true; // Nhay Led bao loi wifi
-    //auto_mode = false; // Che do dieu khien bang tay
+    if (millis() - lastPub > MQTT_UPDATE_INTERVAL) {
+      getTempAll ();
+      Serial.print("Average humidity:");
+      Serial.println(avg_hum);
+      if (hum_setting>0 && humidity1>0 && humidity2>0 &&humidity3>0 ) {
+      Control_humidifier();
+      }  
+      lastPub = millis();
+    }
   }
   checkButton(); 
   blinkLED();
@@ -547,4 +549,13 @@ void checkHumSetting() {
        Serial.println("Manual mode");
        pub_infor01.publish("Manual mode");
    }
+}
+void getTempAll() {
+      temperature1 = getTemp("c", 1); // get DHT1 temperature in C 
+      humidity1 = getTemp("h", 1); // get DHT1 humidity
+      temperature2 = getTemp("c", 2); // get DHT2 temperature in C 
+      humidity2 = getTemp("h", 2); // get DHT2 humidity
+      temperature3 = getTemp("c", 3); // get DHT3 temperature in C 
+      humidity3 = getTemp("h", 3); // get DHT3 humidity  
+      avg_hum = (humidity1 + humidity2 + humidity3)/3;
 }
