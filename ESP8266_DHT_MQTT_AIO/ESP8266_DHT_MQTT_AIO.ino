@@ -41,10 +41,10 @@ float temperature2 = 0.00 ;
 float humidity3 = 0.00 ;
 float temperature3 = 0.00 ;
 float avg_hum;
-int hum_setting = 0;
+int hum_setting ;
 bool res;
 
-bool auto_mode = false;
+//bool auto_mode = false;
 uint16_t sliderval;
 bool esp_state = true; //Trang thai cua ESP khi khoi dong
 
@@ -89,7 +89,8 @@ void MQTT_connect();
 void setup() {
   WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP  
   Serial.begin(115200);
-  Serial.setDebugOutput(true);  
+  Serial.setDebugOutput(true); 
+  EEPROM.begin(512);  //Initialize EEPROM 
   delay(3000);
   Serial.println("\n Starting");
 //  pinMode(button.pin, INPUT_PULLUP);
@@ -138,6 +139,8 @@ void setup() {
   else {
     //if you get here you have connected to the WiFi    
     Serial.println("connected...yeey :)");
+    //Serial.print("ERPROOM:");
+    //Serial.println(EEPROM.read(100););
     //wifiok = true;
   }
   //DHT begin
@@ -148,7 +151,6 @@ void setup() {
   // Setup MQTT subscription for onoff & slider feed.
   mqtt.subscribe(&onoffbutton);
   mqtt.subscribe(&slider);
-  checkHumSetting();
 }
 
 //Check button (wifi manager example)
@@ -211,10 +213,11 @@ void loop() {
     MQTT_connect();
     sub_Button(); //Sub button and slider
     if (esp_state){ // Kiem tra trang thai cua ESP neu moi khoi dong lai
-        if (! pub_infor01.publish("ESP just started.")) {
-        Serial.println(F("Pub_infor: ESP_status failed to publish!"));
+        if (! pub_infor01.publish("ESP just connected.")) {
+        Serial.println(F("Pub_infor: ESP_status failed to publish."));
       } else {
-        Serial.println(F("Pub_infor: ESP_status published!"));
+        Serial.println(F("Pub_infor: ESP_status published."));
+        checkHumSetting();
         hum_status.publish(0);
         esp_state = false;
       }
@@ -232,7 +235,7 @@ void loop() {
       Serial.print("Average humidity:");
       Serial.println(avg_hum);
       //hum_status.publish(relayState); 
-      if (auto_mode && humidity1>0 && humidity2>0 &&humidity3>0 ) {
+      if (hum_setting>0 && humidity1>0 && humidity2>0 &&humidity3>0 ) {
       Control_humidifier();
       }  
       lastPub = millis();
@@ -244,7 +247,7 @@ void loop() {
   }
   else{
     blinkState = true; // Nhay Led bao loi wifi
-    auto_mode = false; // Che do dieu khien bang tay
+    //auto_mode = false; // Che do dieu khien bang tay
   }
   checkButton(); 
   blinkLED();
@@ -449,6 +452,11 @@ void pub_DHT (){
     Serial.println(F("Hum3 published!"));
   }
   pub_infor01.publish("Updated.");
+  //Nhay Led bao updated.
+  digitalWrite(S_LED, HIGH);
+  delay (100);
+  digitalWrite(S_LED, LOW);
+  delay (100);
 }
 
 void sub_Button(){
@@ -477,30 +485,34 @@ void sub_Button(){
       Serial.println((char *)slider.lastread);
       sliderval = atoi((char *)slider.lastread);  // convert to a number
       
-      if (sliderval <= 30){
-         auto_mode = false;
+      if (sliderval == 0){
+         hum_setting = 0;
          Serial.println("Manual mode!");
          pub_infor01.publish("Manual mode");
-         EEPROM.update(100, 0);
+         EEPROM.write(2, 0);
+         EEPROM.commit();
          Serial.println("Update setting to EEPROM:0");
          delay (500);
       } 
       else if (sliderval>100){
-         auto_mode = false;
-         Serial.println("Wrong input (0-30 Manual; 31-100 Auto)");
-         pub_infor01.publish("Wrong input (0-30 Manual; 31-100 Auto)");
-         EEPROM.update(100, 0);
-         Serial.println("Update setting to EEPROM:0");
+         Serial.println("Wrong input (0 Manual; 1-100 Auto)");
+         pub_infor01.publish("Wrong input (0 Manual; 1-100 Auto)");
          delay (500);
       }
       else {
-         auto_mode = true;
+         //auto_mode = true;
          Serial.println("Automatic mode !");
          pub_infor01.publish("Automatic mode");
-         hum_setting = map(((int)sliderval),0,100,0,100);
-         EEPROM.write(100, hum_setting);
-         Serial.println("Update setting to EEPROM!");
-         Serial.print("Humidity threshold is:"); 
+         int hum_set = map(((int)sliderval),0,100,0,100);
+         if (hum_setting != hum_set){ // Chỉ ghi vào EEPROM khi có sự thay đổi
+            hum_setting = hum_set;
+            EEPROM.write(2, hum_setting);
+            EEPROM.commit();
+            Serial.println("EEPROM Updated.");
+         } else {
+            Serial.println("Do not update setting to EEPROM.");
+         }
+         Serial.print("Humidity setting:"); 
          Serial.println(hum_setting);
          delay (500);
          pub_infor01.publish(hum_setting);
@@ -522,20 +534,17 @@ void blink_led(int ledBlinkNum) {
 
 void checkHumSetting() {
    Serial.println("Humidity setting after restart: ");
-   hum_setting = EEPROM.read(100);
-   //Serial.println(hum_setting);
-   if(hum_setting>30) {
-       auto_mode = true;
-       Serial.println("Automatic mode !");
+   hum_setting = EEPROM.read(2);
+   Serial.println(hum_setting);
+   if(hum_setting>0) {
+       //auto_mode = true;
+       Serial.println("Automatic mode");
        pub_infor01.publish("Automatic mode");
-       Serial.print("Humidity setting:"); 
-       Serial.println(hum_setting);
        delay (500);
        pub_infor01.publish(hum_setting);
    }else {
-       auto_mode = false;
-       Serial.println(hum_setting);
-       Serial.println("Manual mode!");
+       //auto_mode = false;
+       Serial.println("Manual mode");
        pub_infor01.publish("Manual mode");
    }
 }
