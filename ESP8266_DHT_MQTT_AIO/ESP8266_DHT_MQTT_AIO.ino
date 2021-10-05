@@ -498,7 +498,7 @@ void sub_Button(){
          Serial.println("Automatic mode !");
          pub_infor01.publish("Automatic mode");
          hum_setting = map(((int)sliderval),0,100,0,100);
-         EEPROM.update(100, hum_setting);
+         EEPROM.write(100, hum_setting);
          Serial.println("Update setting to EEPROM!");
          Serial.print("Humidity threshold is:"); 
          Serial.println(hum_setting);
@@ -523,16 +523,18 @@ void blink_led(int ledBlinkNum) {
 void checkHumSetting() {
    Serial.println("Humidity setting after restart: ");
    hum_setting = EEPROM.read(100);
+   //Serial.println(hum_setting);
    if(hum_setting>30) {
        auto_mode = true;
        Serial.println("Automatic mode !");
        pub_infor01.publish("Automatic mode");
-       Serial.print("Humidity threshold is:"); 
+       Serial.print("Humidity setting:"); 
        Serial.println(hum_setting);
        delay (500);
        pub_infor01.publish(hum_setting);
    }else {
        auto_mode = false;
+       Serial.println(hum_setting);
        Serial.println("Manual mode!");
        pub_infor01.publish("Manual mode");
    }
